@@ -33,6 +33,7 @@ class Agent:
 
     def __init__(self, index=0):
         self.index = index
+        self.live_checking = False
 
     def getAction(self, state):
         """
@@ -693,12 +694,16 @@ class Game:
             self.mute(agentIndex)
             if self.catchExceptions:
                 try:
-                    timed_func = TimeoutFunction(agent.getAction, int(self.rules.getMoveTimeout(agentIndex)) - int(move_time))
+                    #timed_func = TimeoutFunction(agent.getAction, int(self.rules.getMoveTimeout(agentIndex)) - int(move_time))
+                    timed_func = TimeoutFunction(agent.getAction, 1800)
                     try:
                         start_time = time.time()
                         if skip_action:
                             raise TimeoutFunctionException()
                         action = timed_func(observation)
+                        if agent.live_checking:
+                            yield action[1]
+                            action = action[0]
                     except TimeoutFunctionException:
                         print("Agent %d timed out on a single move!" % agentIndex, file=sys.stderr)
                         self.agentTimeout = True
@@ -783,3 +788,4 @@ class Game:
                     self.unmute()
                     return
         self.display.finish()
+        yield

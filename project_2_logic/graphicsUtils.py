@@ -18,7 +18,10 @@ import random
 import string
 import time
 import types
-import tkinter
+try:
+    import tkinter
+except ImportError:
+    tkinter = None
 import os.path
 
 _Windows = sys.platform == 'win32'  # True if on Win95/98/NT
@@ -323,7 +326,7 @@ def _clear_keys(event=None):
 
 
 def keys_pressed(d_o_e=lambda arg: _root_window.dooneevent(arg),
-                 d_w=tkinter._tkinter.DONT_WAIT):
+                 d_w=tkinter._tkinter.DONT_WAIT if tkinter else None):
     d_o_e(d_w)
     if _got_release:
         d_o_e(d_w)
@@ -349,7 +352,7 @@ def wait_for_keys():
 
 def remove_from_screen(x,
                        d_o_e=lambda arg: _root_window.dooneevent(arg),
-                       d_w=tkinter._tkinter.DONT_WAIT):
+                       d_w=tkinter._tkinter.DONT_WAIT if tkinter else None):
     _canvas.delete(x)
     d_o_e(d_w)
 
@@ -363,7 +366,7 @@ def _adjust_coords(coord_list, x, y):
 
 def move_to(object, x, y=None,
             d_o_e=lambda arg: _root_window.dooneevent(arg),
-            d_w=tkinter._tkinter.DONT_WAIT):
+            d_w=tkinter._tkinter.DONT_WAIT if tkinter else None):
     if y is None:
         try:
             x, y = x
@@ -388,7 +391,7 @@ def move_to(object, x, y=None,
 
 def move_by(object, x, y=None,
             d_o_e=lambda arg: _root_window.dooneevent(arg),
-            d_w=tkinter._tkinter.DONT_WAIT, lift=False):
+            d_w=tkinter._tkinter.DONT_WAIT if tkinter else None, lift=False):
     if y is None:
         try:
             x, y = x

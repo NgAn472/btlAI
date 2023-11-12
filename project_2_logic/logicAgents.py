@@ -33,6 +33,7 @@ from game import Agent
 from game import Actions
 from game import Grid
 from graphicsUtils import *
+import graphicsDisplay
 import util
 import time
 import warnings
@@ -85,6 +86,7 @@ class LogicAgent(Agent):
         if prob not in globals().keys() or not prob.endswith('Problem'):
             raise AttributeError(prob + ' is not a planning problem type in logicAgents.py.')
         self.planType = globals()[prob]
+        self.live_checking = False
         print('[LogicAgent] using problem type ' + prob)
 
     def registerInitialState(self, state):
@@ -103,6 +105,8 @@ class LogicAgent(Agent):
 
         self.actions = [] # In case planningFunction times out
         self.actions  = self.planningFunction(problem) # Find a path
+        if self.actions == None:
+            raise Exception('Studenct code supplied None instead of result')
         totalCost = problem.getCostOfActions(self.actions)
         print('Path found with total cost of %d in %.1f seconds' % (totalCost, time.time() - starttime))
         # TODO Drop
@@ -130,7 +134,7 @@ class LogicAgent(Agent):
             # return Directions.STOP
 
 class CheckSatisfiabilityAgent(LogicAgent):
-    def __init__(self, fn='check_location_satisfiability', prob='LocMapProblem', plan_mod=logicPlan):
+    def __init__(self, fn='checkLocationSatisfiability', prob='LocMapProblem', plan_mod=logicPlan):
         # Warning: some advanced Python magic is employed below to find the right functions and problems
 
         # Get the planning function from the name and heuristic
@@ -144,6 +148,7 @@ class CheckSatisfiabilityAgent(LogicAgent):
             raise AttributeError(prob + ' is not a planning problem type in logicAgents.py.')
         self.planType = globals()[prob]
         print('[LogicAgent] using problem type ' + prob)
+        self.live_checking = False
 
     def registerInitialState(self, state):
         if self.planningFunction == None:
@@ -173,6 +178,7 @@ class LocalizeMapAgent(LogicAgent):
         self.visited_states = []
         self.display = display
         self.scripted_actions = scripted_actions
+        self.live_checking = True
 
     def resetLocation(self):
         self.visited_states = []
@@ -203,10 +209,12 @@ class LocalizeMapAgent(LogicAgent):
         self.actions = self.scripted_actions
         self.resetLocation()
         self.planning_fn_output = self.planningFunction(problem, self)
-        self.addNoOp_t0()
+        # self.addNoOp_t0()
 
     def get_known_walls_non_walls_from_known_map(self, known_map):
         # map is 1 for known wall, 0 for 
+        if known_map == None:
+            raise Exception('Student code supplied None instead of a 2D known map')
         known_walls = [[(True if entry==1 else False) for entry in row] for row in known_map]
         known_non_walls = [[(True if entry==0 else False) for entry in row] for row in known_map]
         return known_walls, known_non_walls
@@ -228,19 +236,21 @@ class LocalizationLogicAgent(LocalizeMapAgent):
         if 'actionIndex' not in dir(self): self.actionIndex = 0
         i = self.actionIndex
         self.actionIndex += 1
-        pacman_loc = self.visited_states[i]
 
+        planning_fn_output = None
         if i < self.num_timesteps:
-            pacman_next_loc = self.visited_states[i+1]
             proposed_action = self.actions[i]
-            self.drawPossibleStates(self.planning_fn_output[i], direction=self.actions[i], pacman_position=pacman_next_loc)
+            planning_fn_output = next(self.planning_fn_output)
+            if planning_fn_output == None:
+                raise Exception('Studenct code supplied None instead of result')
+            if isinstance(self.display, graphicsDisplay.PacmanGraphics):
+                self.drawPossibleStates(planning_fn_output, direction=self.actions[i])
         elif i < len(self.actions):
             proposed_action = self.actions[i]
         else:
-            # quit()
             proposed_action = "EndGame"
 
-        return proposed_action
+        return proposed_action, planning_fn_output
 
     def moveToNextState(self, action):
         oldX, oldY = self.state
@@ -291,19 +301,19 @@ class MappingLogicAgent(LocalizeMapAgent):
         if 'actionIndex' not in dir(self): self.actionIndex = 0
         i = self.actionIndex
         self.actionIndex += 1
-        pacman_loc = self.visited_states[i]
 
+        planning_fn_output = None
         if i < self.num_timesteps:
-            pacman_next_loc = self.visited_states[i+1]
             proposed_action = self.actions[i]
-            self.drawWallBeliefs(self.planning_fn_output[i], self.actions[i], self.visited_states[:i])
+            planning_fn_output = next(self.planning_fn_output)
+            if isinstance(self.display, graphicsDisplay.PacmanGraphics):
+                self.drawWallBeliefs(planning_fn_output, self.actions[i], self.visited_states[:i])
         elif i < len(self.actions):
             proposed_action = self.actions[i]
         else:
-            # quit()
             proposed_action = "EndGame"
 
-        return proposed_action
+        return proposed_action, planning_fn_output
 
     def moveToNextState(self, action):
         oldX, oldY = self.state
@@ -350,6 +360,7 @@ class SLAMLogicAgent(LocalizeMapAgent):
         super(SLAMLogicAgent, self).__init__(fn, prob, plan_mod, display, scripted_actions)
         self.scripted_actions = scripted_actions
         self.num_timesteps = len(self.scripted_actions) if self.scripted_actions else 10
+        self.live_checking = True
 
     def getAction(self, state):
         """
@@ -365,14 +376,17 @@ class SLAMLogicAgent(LocalizeMapAgent):
         self.actionIndex += 1
         pacman_loc = self.visited_states[i]
 
+        planning_fn_output = None
         if i < self.num_timesteps:
-            pacman_next_loc = self.visited_states[i+1]
             proposed_action = self.actions[i]
-            self.drawWallandPositionBeliefs(
-                known_map=self.planning_fn_output[0][i],
-                possibleLocations=self.planning_fn_output[1][i],
-                direction=proposed_action, visited_states_to_render=self.visited_states[:i],
-                pacman_position=pacman_next_loc)
+            planning_fn_output = next(self.planning_fn_output)
+            if planning_fn_output == None:
+                raise Exception('Studenct code supplied None instead of result')
+            if isinstance(self.display, graphicsDisplay.PacmanGraphics):
+                self.drawWallandPositionBeliefs(
+                    known_map=planning_fn_output[0],
+                    possibleLocations=planning_fn_output[1],
+                    direction=self.actions[i])
         elif i < len(self.actions):
             proposed_action = self.actions[i]
         else:
@@ -382,7 +396,7 @@ class SLAMLogicAgent(LocalizeMapAgent):
         if proposed_action not in self.getValidActions(pacman_loc) and proposed_action not in ["Stop", "EndGame"]:
             proposed_action = "Stop"
 
-        return proposed_action
+        return proposed_action, planning_fn_output
 
     def moveToNextState(self, action):
         oldX, oldY = self.state

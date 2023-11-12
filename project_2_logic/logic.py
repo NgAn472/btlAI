@@ -23,6 +23,7 @@ for Knowledge bases and First-Order Logic.
 """
 
 import itertools, re
+from typing import Tuple
 import agents
 from logic_utils import *
 import pycosat
@@ -61,7 +62,7 @@ class Expr:
     equalities and disequalities.  We concentrate on logical equality (or
     equivalence) and logical disequality (or XOR).  You have 3 choices:
         (1) Expr('<=>', x, y) and Expr('^', x, y)
-            Note that ^ is bitwose XOR in Python (and Java and C++)
+            Note that ^ is bitwise XOR in Python (and Java and C++)
         (2) expr('x <=> y') and expr('x =/= y').
             See the doc string for the function expr.
         (3) (x % y) and (x ^ y).
@@ -74,15 +75,19 @@ class Expr:
     wouldn't help, because int.__add__ is still called first.) Therefore,
     you should use Expr(1) + x instead, or ONE + x, or expr('1 + x').
     """
-
-    def __init__(self, op, *args):
+    
+    # Initialize a counter object
+    counter = 0
+    def __init__(self, op, *args): 
         "Op is a string or number; args are Exprs (or are coerced to Exprs)."
         assert isinstance(op, str) or (isnumber(op) and not args)
         self.op = num_or_str(op)
         self.args = tuple(map(expr, args)) ## Coerce args to Exprs
         if not args and not is_prop_symbol(self.op):
-            raise SyntaxError("Unacceptable symbol base name (%s). Name must start with an upper-case alphabetic character that and is not TRUE or FALSE." % self.op)
-
+            raise SyntaxError("Unacceptable symbol base name (%s). Name must start with an upper-case alphabetic character that and is not TRUE or FALSE. Furthermore, only the following are allowed: capital and lower case alphabetic, 0-9, _, \",\", [, and ]." % self.op)
+        # Increment the counter when an object is created
+        type(self).counter += 1
+        
     def __call__(self, *args):
         """Self must be a symbol with no args, such as Expr('F').  Create a new
         Expr with 'F' as op and the args as arguments."""
@@ -140,7 +145,17 @@ class PropSymbolExpr(Expr):
     Symbol name must begin with a capital letter. This class helps to add
     brackets with enumerated indices to the end of the name.
     """
-    def __init__(self, sym_str, *index):
+    # copied from logicPlan.py; preferably do this better
+    pacman_str = 'P'
+    food_str = 'FOOD'
+    wall_str = 'WALL'
+    DIRECTIONS = {'North', 'South', 'East', 'West'}
+    # rules
+    double_index = {pacman_str, food_str, wall_str}
+    time_index = {pacman_str, food_str} | DIRECTIONS
+    all_checked = double_index | time_index
+
+    def __init__(self, sym_str: str, *index: Tuple[int], time: int = None):
         """Constructor taking a propositional logic symbol name and an optional set of index values,
         creating a symbol with the base name followed by brackets with the specific
         indices.
@@ -157,24 +172,35 @@ class PropSymbolExpr(Expr):
         P[2,3]
         """
         if not is_prop_symbol(sym_str):
-            raise SyntaxError("Unacceptable symbol base name (%s). Name must start with an upper-case alphabetic character that and is not TRUE or FALSE." % sym_str)
+            raise SyntaxError("Unacceptable symbol base name (%s). Name must start with an upper-case alphabetic character that and is not TRUE or FALSE. Furthermore, only the following are allowed: capital and lower case alphabetic, 0-9, _, \",\", [, and ]." % sym_str)
+        if sym_str in self.all_checked:
+            if sym_str in self.double_index:
+                if len(index) != 2:
+                    raise SyntaxError("Unexpected " + sym_str + " Symbol. Was expecting 2 coordinates.")
+            elif len(index) != 0:
+                raise SyntaxError("Unexpected " + sym_str + " Symbol. Was expecting 0 coordinates.")
+            if sym_str in self.time_index:
+                if time == None:
+                    raise SyntaxError("Unexpected " + sym_str + " Symbol. Was expecting time stamp.")
+            elif time != None:
+                raise SyntaxError("Unexpected " + sym_str + " Symbol. Was expecting no time stamp.")
         self.sym_str = sym_str
         self.indicies = index
-        
-        if len(index) == 0:
-            Expr.__init__(self, sym_str)
-        elif len(index) == 1:
-            Expr.__init__(self, '%s[%d]' % (sym_str, index[0]))
-        elif len(index) == 2:
-            Expr.__init__(self, '%s[%d,%d]' % (sym_str, index[0], index[1]))
-        elif len(index) == 3:
-            Expr.__init__(self, '%s[%d,%d,%d]' % (sym_str, index[0], index[1], index[2]))
-        elif len(index) == 4:
-            Expr.__init__(self, '%s[%d,%d,%d,%d]' % (sym_str, index[0], index[1], index[2], index[3]))
-        elif len(index) == 5:
-            Expr.__init__(self, '%s[%d,%d,%d,%d,%d]' % (sym_str, index[0], index[1], index[2], index[3], index[4]))
-        else:
-            raise SyntaxError("Too many arguments to SymbolExpr constructor. SymbolExpr(symbol_str, [index1], [index2], [index3]")
+        self.time = time
+        if len(index) > 0:
+            if len(index) > 4:
+                raise SyntaxError("Too many arguments to SymbolExpr constructor. SymbolExpr(symbol_str, [index1], [index2], [index3], [index4], time=[time]), or fewer indicies -- possibly 0.")
+            if len(index) == 1:
+                sym_str = '%s[%d]' % (sym_str, *index)
+            elif len(index) == 2:
+                sym_str = '%s[%d,%d]' % (sym_str, *index)
+            elif len(index) == 3:
+                sym_str = '%s[%d,%d,%d]' % (sym_str, *index)
+            elif len(index) == 4:
+                sym_str = '%s[%d,%d,%d,%d]' % (sym_str, *index)
+        if time != None:
+            sym_str = '%s_%d' % (sym_str, int(time))
+        Expr.__init__(self, sym_str)
         
     def getBaseName(self):
         return self.sym_str
@@ -182,24 +208,30 @@ class PropSymbolExpr(Expr):
     def getIndex(self):
         return self.indicies
     
+    def getTime(self):
+        return self.time
+    
 def parseExpr(symbol):
     """A simple expression parser, takes in a PropSymbolExpr and returns 
-       its deconstruction in the form ( sym_str, indices ).
+       its deconstruction in the form ( sym_str, indices, time ).
        Examples:
        >>> parseExpr("North[3]")
-       ('North', '3')
+       ('North', None, (3))
        >>> parseExpr("A")
-       A
-       >>> parseExpr("P[3,4,1]")
-       ('P', (3, 4, 1))
+       (A, None, ())
+       >>> parseExpr("P[3,4]_1")
+       ('P', 1, (3, 4))
     """
+    tokens = re.split(r"_", str(symbol))
+    time = None
+    if len(tokens) == 2:
+        symbol = tokens[0]
+        time = int(tokens[1])
+
     tokens = re.findall(r"[\w]+", str(symbol))
-    if len(tokens)==1:
-        return tokens[0]
-    elif len(tokens)==2:
-        return tuple(tokens)
-    else:
-        return (tokens[0], tuple(map(int,tokens[1:])))
+    if len(tokens) == 1:
+        return (tokens[0], (), time)
+    return (tokens[0], tuple(map(int,tokens[1:])), time)
 
 def expr(s):
     """Create an Expr representing a logic expression by parsing the input
@@ -237,7 +269,7 @@ def is_var_symbol(s):
 def is_prop_symbol(s):
     """A proposition logic symbol is an initial-uppercase string other than
     TRUE or FALSE."""
-    return is_symbol(s) and s[0].isupper() and s != 'TRUE' and s != 'FALSE'
+    return is_symbol(s) and s[0].isupper() and s != 'TRUE' and s != 'FALSE' and re.match(r'[a-zA-Z0-9_\[\],]*$', s)
 
 def variables(s):
     """Return a set of the variables in expression s.
@@ -308,30 +340,6 @@ ZERO, ONE, TWO = tuple(map(SpecialExpr, [0, 1, 2]))
 A, B, C, D, E, F, G, P, Q  = tuple(map(Expr, 'ABCDEFGPQ'))
 
 #______________________________________________________________________________
-
-def tt_entails(kb, alpha):
-    """Does kb entail the sentence alpha? Use truth tables. For propositional
-    kb's and sentences. [Fig. 7.10]
-    >>> tt_entails(expr('P & Q'), expr('Q'))
-    True
-    """
-    assert not variables(alpha)
-    return tt_check_all(kb, alpha, prop_symbols(kb & alpha), {})
-
-def tt_check_all(kb, alpha, symbols, model):
-    "Auxiliary routine to implement tt_entails."
-    if not symbols:
-        if pl_true(kb, model):
-            result = pl_true(alpha, model)
-            assert result in (True, False)
-            return result
-        else:
-            return True
-    else:
-        P, rest = symbols[0], symbols[1:]
-        return (tt_check_all(kb, alpha, rest, extend(model, P, True)) and
-                tt_check_all(kb, alpha, rest, extend(model, P, False)))
-
 def prop_symbols(x):
     "Return a list of all propositional symbols in x."
     if not isinstance(x, Expr):
@@ -341,14 +349,6 @@ def prop_symbols(x):
     else:
         return list(set(symbol for arg in x.args
                         for symbol in prop_symbols(arg)))
-
-def tt_true(alpha):
-    """Is the propositional sentence alpha a tautology? (alpha will be
-    coerced to an expr.)
-    >>> tt_true(expr("(P >> Q) <=> (~P | Q)"))
-    True
-    """
-    return tt_entails(TRUE, expr(alpha))
 
 def pl_true(exp, model={}):
     """Return True if the propositional logic expression is true in the model,

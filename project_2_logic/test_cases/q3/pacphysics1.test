@@ -8,3 +8,5 @@ layout: """
 %%%
 """
 t: "0"
+
+axiomType: "sensor"

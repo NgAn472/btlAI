@@ -20,6 +20,7 @@ import layout
 import pacman
 import logicAgents 
 from logicPlan import PlanningProblem
+import logicPlan
 
 import itertools
 
@@ -93,11 +94,18 @@ class LogicTest(testClasses.TestCase):
             grades.addMessage('PASS: %s' % self.path)
             grades.addMessage('\t%s' % self.success)
             return True
-        else:
-            grades.addMessage('FAIL: %s' % self.path)
-            grades.addMessage('\t%s' % self.failure)
-            grades.addMessage('\tstudent result: "%s"' % result)
-            grades.addMessage('\tcorrect result: "%s"' % solutionDict['result'])
+        for i in range(100):
+            solI = 'result' + str(i)
+            if solI not in solutionDict:
+                break
+            if result == solutionDict[solI]:
+                grades.addMessage('PASS: %s' % self.path)
+                grades.addMessage('\t%s' % self.success)
+                return True
+        grades.addMessage('FAIL: %s' % self.path)
+        grades.addMessage('\t%s' % self.failure)
+        grades.addMessage('\tstudent result: "%s"' % result)
+        grades.addMessage('\tcorrect result: "%s"' % solutionDict['result'])
 
         return False
 
@@ -123,18 +131,27 @@ class PacphysicsTest(testClasses.TestCase):
         self.layoutText = testDict['layout']
         self.layoutName = testDict['layoutName']
         self.t = int(testDict['t'])
-        self.soln_labels = ["pacphysics_axioms"]
+        self.soln_labels = ["pacphysicsAxioms"]
+        self.axiom_type = testDict['axiomType']
+        if self.axiom_type == 'sensor':
+            self.sensorAxioms = logicPlan.sensorAxioms
+            self.successorAxioms = logicPlan.allLegalSuccessorAxioms
+        elif self.axiom_type == 'slam':
+            self.sensorAxioms = logicPlan.SLAMSensorAxioms
+            self.successorAxioms = logicPlan.SLAMSuccessorAxioms
+        else:
+            raise Exception('Bad test case!')
 
     def solution(self, logicPlan):
         lay = layout.Layout([l.strip() for l in self.layoutText.split('\n')])
         walls_list = lay.walls.data
         all_coords = lay.get_all_coords_list()
         non_outer_wall_coords = lay.get_non_outer_wall_coords_list()
-        pacphysics_axioms = logicPlan.pacphysics_axioms(self.t, all_coords, non_outer_wall_coords)
+        pacphysics_axioms = logicPlan.pacphysicsAxioms(self.t, all_coords, non_outer_wall_coords, walls_list, self.sensorAxioms, self.successorAxioms)
         return pacphysics_axioms
 
     def execute(self, grades, moduleDict, solutionDict):
-        grades.addMessage('Testing pacphysics_axioms')
+        grades.addMessage('Testing pacphysicsAxioms')
         logicPlan = moduleDict['logicPlan']
         gold_solution = solutionDict[self.soln_labels[0]]
 
@@ -143,16 +160,21 @@ class PacphysicsTest(testClasses.TestCase):
         gold_soln_clauses_list_being_conjoined = str(gold_solution)[1:-1].split(" & ")
         soln_clauses_list_being_conjoined = str(solution)[1:-1].split(" & ")
 
-        # Check student used conjoin correctly.
+        # Check student used conjoin correctly; this is a weak check
+        # after <=>, we get Action) | (Wall expresisons due to SLAM successor
         for soln_clause in soln_clauses_list_being_conjoined:
+            if "<=>" in soln_clause:
+                if self.axiom_type == 'sensor':
+                    continue
+                else:
+                    break
             contains_open_parens = ("(" in soln_clause[1:-1]) or ("(" in soln_clause[1:-1])
             if contains_open_parens:
                 grades.addMessage('FAIL: {}'.format(self.path))
                 grades.addMessage('\tStudent solution does not combine sentences properly.')
-                grades.addMessage('\tMake sure you append 3 items to pacphysics_sentences,'
-                    'and conjoin the if wall(x, y) --> Pacman not at (x, y, t) sentences.')
+                grades.addMessage('\tMake sure you append the items to join with "and",'
+                    ' and conjoin at the end.')
                 return False
-
 
         # Check number of clauses is correct.
         gold_soln_num_clauses_conjoined = len(gold_soln_clauses_list_being_conjoined)
@@ -173,9 +195,16 @@ class PacphysicsTest(testClasses.TestCase):
                 grades.addMessage('\tStudent solution does not contain clause {}'.format(gold_clause))
                 return False
 
-        if str(solution) != str(gold_solution):
+        if set(soln_clauses_list_being_conjoined) != set(gold_soln_clauses_list_being_conjoined):
             grades.addMessage('FAIL: {}'.format(self.path))
-            grades.addMessage('\tStudent solution differed from autograder solution')
+            grades.addMessage('\tStudent solution differed from autograder solution on clause set comparison')
+            grades.addMessage('\tStudent solution: {}'.format(solution))
+            grades.addMessage('\tCorrect solution: {}'.format(gold_solution))
+            return False
+        
+        if sorted(str(solution)) != sorted(str(gold_solution)):
+            grades.addMessage('FAIL: {}'.format(self.path))
+            grades.addMessage('\tStudent solution differed from autograder solution on character list comparison')
             grades.addMessage('\tStudent solution: {}'.format(solution))
             grades.addMessage('\tCorrect solution: {}'.format(gold_solution))
             return False
@@ -214,19 +243,19 @@ class LocationSatisfiabilityTest(testClasses.TestCase):
         self.action0 = testDict['action0']
         self.x1_y1 = eval(testDict['x1_y1'])
         self.action1 = testDict['action1']
-        self.soln_labels = ["model_not_at_x1_y1_1", "model_at_x1_y1_1"]
+        self.soln_labels = ["model_at_x1_y1_1", "model_not_at_x1_y1_1"]
 
     def solution(self, logicPlan):
         lay = layout.Layout([l.strip() for l in self.layoutText.split('\n')])
-        pac = logicAgents.CheckSatisfiabilityAgent('check_location_satisfiability', 'LocMapProblem', logicPlan)
+        pac = logicAgents.CheckSatisfiabilityAgent('checkLocationSatisfiability', 'LocMapProblem', logicPlan)
         ghosts = []
         disp = textDisplay.NullGraphics()
-        games = pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=180)
-        loc_sat_models = logicPlan.check_location_satisfiability(self.x1_y1, self.x0_y0, self.action0, self.action1, pac.problem)
+        games = next(pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=180))
+        loc_sat_models = logicPlan.checkLocationSatisfiability(self.x1_y1, self.x0_y0, self.action0, self.action1, pac.problem)
         return loc_sat_models
 
     def execute(self, grades, moduleDict, solutionDict):
-        grades.addMessage('Testing check_location_satisfiability')
+        grades.addMessage('Testing checkLocationSatisfiability')
         logicPlan = moduleDict['logicPlan']
 
         solution = self.solution(logicPlan)
@@ -322,7 +351,7 @@ class LocationSatisfiabilityTest(testClasses.TestCase):
 
 
 class PositionProblemTest(testClasses.TestCase):
-    
+
     def __init__(self, question, testDict):
         super(PositionProblemTest, self).__init__(question, testDict)
         self.layoutText = testDict['layout']
@@ -333,7 +362,7 @@ class PositionProblemTest(testClasses.TestCase):
         pac = logicAgents.LogicAgent('plp', 'PositionPlanningProblem', logicPlan)
         ghosts = []
         disp = textDisplay.NullGraphics()
-        games = pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=180)
+        games = next(pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=300))
         gameState = games[0].state
         return (gameState.isWin(), gameState.getScore(), pac.actions)
 
@@ -384,15 +413,15 @@ class PositionProblemTest(testClasses.TestCase):
         handle.write('solution_score: "%d"\n' % solution[1])
         handle.write('solution_path: "%s"\n' % ' '.join(solution[2]))
         handle.close()
-    
+
     # BEGIN SOLUTION NO PROMPT
     def createPublicVersion(self):
         pass
     # END SOLUTION NO PROMPT
-        
+
 
 class FoodProblemTest(testClasses.TestCase):
-    
+
     def __init__(self, question, testDict):
         super(FoodProblemTest, self).__init__(question, testDict)
         self.layoutText = testDict['layout']
@@ -403,7 +432,7 @@ class FoodProblemTest(testClasses.TestCase):
         pac = logicAgents.LogicAgent('flp', 'FoodPlanningProblem', logicPlan)
         ghosts = []
         disp = textDisplay.NullGraphics()
-        games = pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=180)
+        games = next(pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=300))
         gameState = games[0].state
         return (gameState.isWin(), gameState.getScore(), pac.actions)
 
@@ -454,7 +483,7 @@ class FoodProblemTest(testClasses.TestCase):
         handle.write('solution_score: "%d"\n' % solution[1])
         handle.write('solution_path: "%s"\n' % ' '.join(solution[2]))
         handle.close()
-    
+
     # BEGIN SOLUTION NO PROMPT
     def createPublicVersion(self):
         pass
@@ -472,32 +501,36 @@ class LocalizationProblemTest(testClasses.TestCase):
     def solution(self, logicPlan):
         lay = layout.Layout([l.strip() for l in self.layoutText.split('\n')])
         ghosts = []
-        disp = graphicsDisplay.PacmanGraphics(frameTime=0.5)
-        # TODO: Figure out if we can use no-graphics
+        # TODO: Figure out if we can use no-graphics cleaner
+        disp = self.question.display
+        if isinstance(disp, graphicsDisplay.PacmanGraphics): # autograder.py has incorrect options
+            disp = graphicsDisplay.PacmanGraphics(frameTime=0.5)
         pac = logicAgents.LocalizationLogicAgent(
             'loc', 'LocalizationProblem', logicPlan, display=disp, scripted_actions=self.scriptedActions)
-        games = pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=300)
-        return pac.planning_fn_output
+        yield from pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=300)
 
     def execute(self, grades, moduleDict, solutionDict):
         logicPlan = moduleDict['logicPlan']
         gold_solution = eval(solutionDict['possible_locations_per_timestep'])
 
-        solution = self.solution(logicPlan)
-
-        if len(solution) != len(gold_solution):
-            grades.addMessage('FAIL: {}'.format(self.path))
-            grades.addMessage('\tstudent solution length: {}'.format(len(solution)))
-            grades.addMessage('\tcorrect solution length: {}'.format(len(gold_solution)))
-            return False
-
-        for t in range(len(gold_solution)):
-            if set(solution[t]) != set(gold_solution[t]):
+        num_timesteps = 0
+        for t, solution in enumerate(self.solution(logicPlan)):
+            if solution is None:
+                num_timesteps = t
+                break
+            if set(solution) != set(gold_solution[t]):
                 grades.addMessage('FAIL: {}'.format(self.path))
                 grades.addMessage('\tStudent solution differed from autograder solution at timestep t = {}'.format(t))
-                grades.addMessage('\tStudent solution at time t = {}: {}'.format(t, solution[t]))
+                grades.addMessage('\tStudent solution at time t = {}: {}'.format(t, solution))
                 grades.addMessage('\tCorrect solution at time t = {}: {}'.format(t, gold_solution[t]))
                 return False
+        
+        if num_timesteps != len(gold_solution):
+            grades.addMessage('FAIL: {}'.format(self.path))
+            grades.addMessage('\tStudent solution differed from autograder solution')
+            grades.addMessage('\tStudent solution timestep number: {}'.format(num_timesteps))
+            grades.addMessage('\tCorrect solution timestep number: {}'.format(len(eval(solutionDict['possible_locations_per_timestep']))))
+            return False
 
         grades.addMessage('PASS: %s' % self.path)
         return True
@@ -535,14 +568,15 @@ class MappingProblemTest(testClasses.TestCase):
     def solution(self, logicPlan):
         lay = layout.Layout([l.strip() for l in self.layoutText.split('\n')])
         ghosts = []
-        disp = graphicsDisplay.PacmanGraphics(frameTime=0.5, render_walls_beforehand=False)
-        # TODO: Figure out if we can use no-graphics
+        # TODO: Figure out if we can use no-graphics cleaner
+        disp = self.question.display
+        if isinstance(disp, graphicsDisplay.PacmanGraphics): # autograder.py has incorrect options
+            disp = graphicsDisplay.PacmanGraphics(frameTime=0.5, render_walls_beforehand=False)
         pac = logicAgents.MappingLogicAgent(
             'mp', 'MappingProblem', logicPlan, display=disp, scripted_actions=self.scriptedActions)
-        games = pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=300)
-        return pac.planning_fn_output
+        yield from pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=300)
 
-    def check_len(self, soln, gold_soln, str_info=""):
+    def check_len(self, grades, soln, gold_soln, str_info=""):
         if len(soln) != len(gold_soln):
             grades.addMessage('FAIL: {}'.format(self.path))
             grades.addMessage('\tstudent solution length {}: {}'.format(str_info, len(soln)))
@@ -554,21 +588,28 @@ class MappingProblemTest(testClasses.TestCase):
         logicPlan = moduleDict['logicPlan']
         gold_solution = eval(solutionDict[self.solution_label])
 
-        solution = self.solution(logicPlan)
+        num_timesteps = 0
 
-        if not self.check_len(solution, gold_solution):
-            return False
-
-        for t in range(len(gold_solution)):
-            if not self.check_len(solution[t], gold_solution[t], "at time t = {}:".format(t)):
+        for t, solution_t in enumerate(self.solution(logicPlan)):
+            if solution_t == None:
+                num_timesteps = t
+                break
+            if not self.check_len(grades, solution_t, gold_solution[t], "at time t = {}".format(t)):
                 return False
 
-            if solution[t] != gold_solution[t]:
+            if solution_t != gold_solution[t]:
                 grades.addMessage('FAIL: {}'.format(self.path))
                 grades.addMessage('\tStudent solution differed from autograder solution at timestep t = {}'.format(t))
-                grades.addMessage('\tStudent solution at time t = {}: {}'.format(t, solution[t]))
+                grades.addMessage('\tStudent solution at time t = {}: {}'.format(t, solution_t))
                 grades.addMessage('\tCorrect solution at time t = {}: {}'.format(t, gold_solution[t]))
                 return False
+        
+        if num_timesteps != len(gold_solution):
+            grades.addMessage('FAIL: {}'.format(self.path))
+            grades.addMessage('\tStudent solution differed from autograder solution')
+            grades.addMessage('\tStudent solution timestep number: {}'.format(num_timesteps))
+            grades.addMessage('\tCorrect solution timestep number: {}'.format(len(eval(solutionDict[self.solution_label]))))
+            return False
 
         grades.addMessage('PASS: %s' % self.path)
         return True
@@ -606,14 +647,15 @@ class SLAMProblemTest(testClasses.TestCase):
     def solution(self, logicPlan):
         lay = layout.Layout([l.strip() for l in self.layoutText.split('\n')])
         ghosts = []
-        disp = graphicsDisplay.PacmanGraphics(frameTime=0.5, render_walls_beforehand=False)
-        # TODO: Figure out if we can use no-graphics
+        # TODO: Figure out if we can use no-graphics cleaner
+        disp = self.question.display
+        if isinstance(disp, graphicsDisplay.PacmanGraphics): # autograder.py has incorrect options
+            disp = graphicsDisplay.PacmanGraphics(frameTime=0.5, render_walls_beforehand=False)
         pac = logicAgents.SLAMLogicAgent(
             'slam', 'SLAMProblem', logicPlan, display=disp, scripted_actions=self.scriptedActions)
-        games = pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=1200)
-        return pac.planning_fn_output
+        yield from pacman.runGames(lay, pac, ghosts, disp, 1, False, catchExceptions=True, timeout=1800)
 
-    def check_len(self, soln, gold_soln, str_info=""):
+    def check_len(self, grades, soln, gold_soln, str_info=""):
         if len(soln) != len(gold_soln):
             grades.addMessage('FAIL: {}'.format(self.path))
             grades.addMessage('\tstudent solution length {}: {}'.format(str_info, len(soln)))
@@ -623,23 +665,27 @@ class SLAMProblemTest(testClasses.TestCase):
 
     def execute(self, grades, moduleDict, solutionDict):
         logicPlan = moduleDict['logicPlan']
-        solutions = self.solution(logicPlan)
-        for soln_label, solution in zip(self.solution_labels, solutions):
-            gold_solution = eval(solutionDict[soln_label])
+        num_timesteps = 0
+        for t, solutions_at_t in enumerate(self.solution(logicPlan)):
+            if solutions_at_t is None:
+                num_timesteps = t
+                break
+            for soln_label, solution in zip(self.solution_labels, solutions_at_t):
+                gold_solution = eval(solutionDict[soln_label])
 
-            if not self.check_len(solution, gold_solution):
-                return False
-
-            for t in range(len(gold_solution)):
-                if not self.check_len(solution[t], gold_solution[t], "at time t = {}:".format(t)):
-                    return False
-
-                if solution[t] != gold_solution[t]:
+                if solution != gold_solution[t]:
                     grades.addMessage('FAIL: {}'.format(self.path))
                     grades.addMessage('\tStudent solution differed from autograder solution at timestep t = {}'.format(t))
-                    grades.addMessage('\tStudent solution for {} at time t = {}: {}'.format(soln_label, t, solution[t]))
+                    grades.addMessage('\tStudent solution for {} at time t = {}: {}'.format(soln_label, t, solution))
                     grades.addMessage('\tCorrect solution for {} at time t = {}: {}'.format(soln_label, t, gold_solution[t]))
                     return False
+        
+        if num_timesteps != len(eval(solutionDict[self.solution_labels[0]])):
+            grades.addMessage('FAIL: {}'.format(self.path))
+            grades.addMessage('\tStudent solution differed from autograder solution')
+            grades.addMessage('\tStudent solution timestep number: {}'.format(num_timesteps))
+            grades.addMessage('\tCorrect solution timestep number: {}'.format(len(eval(solutionDict[self.solution_labels[0]]))))
+            return False
 
         grades.addMessage('PASS: %s' % self.path)
         return True

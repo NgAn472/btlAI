@@ -8,3 +8,4 @@ layout: """
 %%%%
 """
 t: "1"
+axiomType: "slam"

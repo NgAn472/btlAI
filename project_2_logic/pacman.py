@@ -696,7 +696,12 @@ def runGames(layout, pacman, ghosts, display, numGames, record, numTraining=0, c
             gameDisplay = display
             rules.quiet = False
         game = rules.newGame(layout, pacman, ghosts, gameDisplay, beQuiet, catchExceptions)
-        game.run()
+        if pacman.live_checking:
+            yield from game.run()
+        else:
+            for _ in game.run():
+                pass
+        
         if not beQuiet:
             games.append(game)
 
@@ -718,7 +723,7 @@ def runGames(layout, pacman, ghosts, display, numGames, record, numTraining=0, c
         print('Win Rate:      %d/%d (%.2f)' % (wins.count(True), len(wins), winRate))
         print('Record:       ', ', '.join([['Loss', 'Win'][int(w)] for w in wins]))
 
-    return games
+    yield games
 
 
 if __name__ == '__main__':
@@ -733,7 +738,7 @@ if __name__ == '__main__':
     > python pacman.py --help
     """
     args = readCommand(sys.argv[1:])  # Get game components based on input
-    runGames(**args)
+    next(runGames(**args))
 
     # import cProfile
     # cProfile.run("runGames( **args )")
