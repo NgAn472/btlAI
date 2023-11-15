@@ -1,4 +1,5 @@
 from matplotlib.pyplot import flag
+from requests import get
 import nn
 import backend
 class PerceptronModel(object):
@@ -63,6 +64,15 @@ class RegressionModel(object):
     def __init__(self):
         # Initialize your model parameters here
         "*** YOUR CODE HERE ***"
+        self.w1 = nn.Parameter(1, 512)
+        self.b1 = nn.Parameter(1, 512)
+        self.w2 = nn.Parameter(512, 256)
+        self.b2 = nn.Parameter(1, 256)
+        self.w3 = nn.Parameter(256, 1)
+        self.b3 = nn.Parameter(1, 1)
+        
+        self.branch_size = 200
+        self.lr = 0.05
 
     def run(self, x):
         """
@@ -74,6 +84,10 @@ class RegressionModel(object):
             A node with shape (batch_size x 1) containing predicted y-values
         """
         "*** YOUR CODE HERE ***"
+        y1 = nn.ReLU(nn.AddBias(nn.Linear(x, self.w1), self.b1))
+        y2 = nn.ReLU(nn.AddBias(nn.Linear(y1, self.w2), self.b2))
+        y = nn.AddBias(nn.Linear(y2, self.w3), self.b3)
+        return y
 
     def get_loss(self, x, y):
         """
@@ -86,12 +100,25 @@ class RegressionModel(object):
         Returns: a loss node
         """
         "*** YOUR CODE HERE ***"
+        return nn.SquareLoss(self.run(x), y)
 
     def train(self, dataset):
         """
         Trains the model.
         """
         "*** YOUR CODE HERE ***"
+        for x, y_ in dataset.iterate_forever(self.branch_size):
+            loss = self.get_loss(x, y_)
+            if nn.as_scalar(loss) < 0.02:
+                break
+            else:
+                g_w1, g_w2, g_w3, g_b1, g_b2, g_b3 = nn.gradients(loss, [self.w1, self.w2, self.w3, self.b1, self.b2, self.b3])
+                self.w3.update(g_w3, -self.lr)
+                self.b3.update(g_b3, -self.lr)
+                self.w2.update(g_w2, -self.lr)
+                self.b2.update(g_b2, -self.lr)
+                self.w1.update(g_w1, -self.lr)
+                self.b1.update(g_b1, -self.lr)
 
 class DigitClassificationModel(object):
     """
@@ -110,16 +137,14 @@ class DigitClassificationModel(object):
     def __init__(self):
         # Initialize your model parameters here
         "*** YOUR CODE HERE ***"
-        self.w1 = nn.Parameter(784, 128)
-        self.b1 = nn.Parameter(1, 128)
-        self.w2 = nn.Parameter(128, 128)
-        self.b2 = nn.Parameter(1, 128)
-        self.w3 = nn.Parameter(128, 10)
+        self.w1 = nn.Parameter(784, 200)
+        self.b1 = nn.Parameter(1, 200)
+        self.w2 = nn.Parameter(200, 200)
+        self.b2 = nn.Parameter(1, 200)
+        self.w3 = nn.Parameter(200, 10)
         self.b3 = nn.Parameter(1, 10)
-        # self.w4 = nn.Parameter(64, 10)
-        # self.b4 = nn.Parameter(1, 10)
-
-        self.lr = 0.1
+    
+        self.lr = 0.5
         self.batch_size = 100
 
     def run(self, x):
